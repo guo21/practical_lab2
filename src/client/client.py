@@ -32,9 +32,13 @@ class JMessageClient:
         # self.key_registration()
 
     def key_generation(self, rsa_key_len=1024, dsa_key_len=1024):
+        self.__rsa_key_gen(rsa_key_len)
+        self.__dsa_key_gen(dsa_key_len)
+
+    def __rsa_key_gen(self, key_len):
         # generate RSA key pair
         # generate RSA secret key
-        self.RSA_secret_key = RSA.generate(rsa_key_len)
+        self.RSA_secret_key = RSA.generate(key_len)
         # generate RSA public key
 
         self.RSA_pub_key = self.RSA_secret_key.publickey().exportKey('DER')
@@ -42,9 +46,7 @@ class JMessageClient:
         self.RSA_pub_key = base64.b64encode(self.RSA_pub_key)
         # print self.RSA_pub_key, "base64"
 
-        self.__dsa_key_gen(dsa_key_len)
-
-    def __dsa_key_gen(self,key_len):
+    def __dsa_key_gen(self, key_len):
         # generate DSA key pair
         # generate DSA secret key
         success = self.dsa.UnlockComponent("Anything for 30-day trial")
@@ -89,12 +91,6 @@ class JMessageClient:
 
         response = urllib2.urlopen(request)
         print response.read()
-
-    # / registerKey / < sender username >
-    # jmessage.server.isi.jhu.edu
-
-    def format(self):
-        pass
 
     def concatenation_for_trans(self):
         self.trans_message = self.RSA_pub_key + chr(0x25) + self.DSA_pub_key
