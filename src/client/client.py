@@ -22,9 +22,23 @@ class JMessageClient:
     userid = 'yguo'
     dsa = None
     pk_rsa = None
+    pk_dsa = None
 
     def __init__(self):
+        # init dsa
         self.dsa = chilkat.CkDsa()
+        success = self.dsa.UnlockComponent("Anything for 30-day trial")
+        if (success != True):
+            print(dsa.lastErrorText())
+            sys.exit()
+
+        # init pk_dsa
+        self.pk_dsa = chilkat.CkDsa()
+        success = self.pk_dsa.UnlockComponent("Anything for 30-day trial")
+        if (success != True):
+            print(dsa.lastErrorText())
+            sys.exit()
+
         self.key_generation()
         self.concatenation_for_trans()
         # self.enum_users()
@@ -81,9 +95,10 @@ class JMessageClient:
     def key_lookup(self, username):
         regi_url = 'http://jmessage.server.isi.jhu.edu/lookupKey/' + username
         request = urllib2.Request(regi_url)
-
         response = urllib2.urlopen(request)
-        print response.read()
+        result = response.read()
+        print result
+        return result
 
     def enum_users(self):
         regi_url = 'http://jmessage.server.isi.jhu.edu/lookupUsers'
@@ -195,6 +210,66 @@ class JMessageClient:
 
         return padding
 
+    def decrypt(self, cipher_text = '', username=''):
+        # 1.Contact the server to obtain the public key pk DSA for the sender.
+        pk_str = (json.loads(self.key_lookup(username)))['keyData']  # json.loads->unicode watch out
+        pk_dsa_str = chilkat.CkByteData()
+        pk_dsa_str = base64.b64decode(self.__split_rsa_dsa(pk_str, 'dsa'))
+        success = self.pk_dsa.FromDer(pk_dsa_str)
+        if (success != True):
+            print(dsa.lastErrorText())
+            sys.exit()
+
+        # 2.Parse the the string C as C1base64||ASCII(0x20)||C2base64||ASCII(0x20)||sigma Base64 .
+        c = cipher_text.split(chr(0x20))
+        c1_base64 = c[0]
+        c2_base64 = c[1]
+        sigma_base64 = c[2]
+        # 3.Base64 decode each of C1base64,C2base64,sigmabase64 individually to obtain the values C1, C2, sigma.
+        c1 = base64.b64decode(c1_base64)
+        c2 = base64.b64decode(c2_base64)
+        sigma = base64.b64decode(sigma_base64)
+
+        # 4. Verify the DSA signature sigma using pkDSA on the message C1 Base64||ASCII(0x20)||C2 Base64.
+        # If verification fails, abort.
+        hash_str = c1_base64 + chr(0x20) +c2_base64
+        self.__dsa_verify(hash_str, self.pk_dsa, sigma)
+
+
+
+    def __split_rsa_dsa(self, pk, key_type="rsa"):
+        pk_str = pk.split('%')
+        if key_type == "rsa":
+            return pk_str[0]
+        elif key_type == "dsa":
+            return pk_str[1]
+        else:
+            print 'split error'
+
+    def __dsa_verify(self, hash_str, dsa, sigma):
+
+        # Load the hash to be verified against the signature.
+        success = dsa.SetEncodedHash("hex", hash_str)
+        if (success != True):
+            print(dsa2.lastErrorText())
+            sys.exit()
+
+        # Load the signature:
+        success = dsa.SetEncodedSignature("hex", sigma)
+        if (success != True):
+            print(dsa.lastErrorText())
+            sys.exit()
+
+        # Verify:
+        success = dsa.Verify()
+        if (success != True):
+            print(dsa2.lastErrorText())
+        else:
+            print("DSA Signature Verified!")
+
+
+
 
 j = JMessageClient()
-j.encrypt()
+j.decrypt('','xhyu2')
+# j.encrypt()
