@@ -7,6 +7,7 @@ from Crypto.Cipher import AES
 from Crypto.Util import Counter
 from pyasn1.type import univ
 from pyasn1.codec.der import encoder
+import requests
 import base64
 import sys
 import chilkat
@@ -37,17 +38,17 @@ class JMessageCrypto:
             sys.exit()
 
         # init pk_dsa
-        self.pk_dsa = chilkat.CkDsa()
-        success = self.pk_dsa.UnlockComponent("Anything for 30-day trial")
-        if (success != True):
-            print(self.pk_dsa.lastErrorText())
-            sys.exit()
-
+        # self.pk_dsa = chilkat.CkDsa()
+        # success = self.pk_dsa.UnlockComponent("Anything for 30-day trial")
+        # if (success != True):
+        #     print(self.pk_dsa.lastErrorText())
+        #     # sys.exit()
+        # self.key_regen()
         self.key_generation()
         self.__concatenation_for_trans()
         # self.enum_users()
-        # self.key_lookup('xhyu2')
-        # self.key_registration()
+        # print json.loads(self.key_lookup('ytest'))['keyData'], 'test'
+        self.key_registration()
 
     def key_generation(self, rsa_key_len=1024, dsa_key_len=1024):
         self.__rsa_key_gen(rsa_key_len)
@@ -67,10 +68,10 @@ class JMessageCrypto:
     def __dsa_key_gen(self, key_len):
         # generate DSA key pair
         # generate DSA secret key
-        success = self.dsa.UnlockComponent("Anything for 30-day trial")
-        if (success != True):
-            print(self.dsa.lastErrorText())
-            sys.exit()
+        # success = self.dsa.UnlockComponent("Anything for 30-day trial")
+        # if (success != True):
+        #     print(self.dsa.lastErrorText())
+        #     sys.exit()
 
         success = self.dsa.GenKey(key_len)
         if (success != True):
@@ -79,26 +80,66 @@ class JMessageCrypto:
 
         # self.DSA_secret_key = dsa.toPem()
         # print self.DSA_secret_key
-        self.DSA_pub_key = chilkat.CkByteData()
-        self.dsa.ToPublicDer(self.DSA_pub_key)
-        self.DSA_pub_key = base64.b64encode(self.DSA_pub_key.getBytes())
+        dsa_pub = chilkat.CkByteData()
+        self.dsa.ToPublicDer(dsa_pub)
+        dsa_pub = base64.b64encode(dsa_pub.getBytes())
+        self.DSA_pub_key = dsa_pub
         # print len(self.DSA_pub_key)
+
+    def key_regen(self, rsa_bits=1024, dsa_bits=1024):
+        self.rsa = RSA.generate(rsa_bits)
+        # self.pk_rsa = self.rsa_key.publickey().exportKey("PEM")
+        # self.sk_rsa = self.rsa_key.exportKey("PEM")
+
+        self.dsa.GenKey(dsa_bits)
+        # self.dsa_key = DSA.generate(dsa_bits)
+        # self.pk_dsa = self.dsa_key.key.y
+        # self.sk_dsa = self.dsa_key.key.x
+        self.rsa_pk_der = self.rsa.publickey().exportKey('DER')
+        dsa_pk = chilkat.CkByteData()
+        self.dsa.ToPublicDer(dsa_pk)
+        dsa_pk = dsa_pk.getBytes()
+        # self.dsa_pk = self.dsa_key.publickey().y
+        # rsa_asn1 = self.__encode_asn1der(self.rsa_pk)
+        rsa_asn1 = self.rsa_pk_der
+        # dsa_asn1 = self.__encode_asn1der(self.dsa_pk)
+        rsa_base64 = base64.b64encode(rsa_asn1)
+        dsa_base64 = base64.b64encode(dsa_pk)
+        self.RSA_pub_key = rsa_base64
+        self.DSA_pub_key = dsa_base64
+
+        # print rsa_base64 + chr(0x25) + dsa_base64
+        return rsa_base64 + chr(0x25) + dsa_base64
+        # return ((pk_rsa, sk_rsa), (pk_dsa, sk_dsa))
 
     def key_registration(self):
 
         regi_url = 'http://jmessage.server.isi.jhu.edu/registerKey/' + self.userid
-        data = {'KeyData': self.trans_message}
-        key = json.dumps(data)
+        data = {'keyData': self.__concatenation_for_trans()}
+        # print self.__concatenation_for_trans()
+        # print self.trans_message
+        # key = json.dumps(data)
+        header = {'Accept': 'application/json'}
+        s = requests.Session()
+        r = s.post(regi_url, headers=header, json=data)
+        result = json.loads(r.text)['result']
+        # print result
+        if result == 'True':
+            return result
+        else:
+            print 'register failed, you can use offline mode'
+        # key = key.encode('utf-8')
         # print key
-        request = urllib2.Request(regi_url, key)
-
-        request.add_header('Accept', 'application/json')
-        response = urllib2.urlopen(request)
-        print response.read()
+        # request = urllib2.Request(regi_url)
+        # request.add_header('Accept', 'application/json')
+        # request.add_data(key)
+        # response = urllib2.urlopen(request)
+        # print response.read()
 
     def key_lookup(self, username):
         regi_url = 'http://jmessage.server.isi.jhu.edu/lookupKey/' + username
         request = urllib2.Request(regi_url)
+        request.add_header('Accept', 'application/json')
         response = urllib2.urlopen(request)
         result = response.read()
         # print result
@@ -122,6 +163,7 @@ Could not find a key for user ''', username
     def enum_users(self):
         regi_url = 'http://jmessage.server.isi.jhu.edu/lookupUsers'
         request = urllib2.Request(regi_url)
+        request.add_header('Accept', 'application/json')
         response = urllib2.urlopen(request)
         return response.read()
 
@@ -129,11 +171,14 @@ Could not find a key for user ''', username
         regi_url = 'http://jmessage.server.isi.jhu.edu/getMessages/' + self.userid
         # regi_url = 'http://jmessage.server.isi.jhu.edu/getMessages/xhyu2'
         request = urllib2.Request(regi_url)
+        request.add_header('Accept', 'application/json')
         response = urllib2.urlopen(request)
         return response.read()
 
     def __concatenation_for_trans(self):
         self.trans_message = self.RSA_pub_key + chr(0x25) + self.DSA_pub_key
+        return self.trans_message
+        # self.trans_message = self.trans_message.encode('utf-8')
 
     def encrypt(self, message='', pk_RSA = None):
         # 1generate random aes128 key
@@ -216,7 +261,7 @@ Could not find a key for user ''', username
         #  signature.  It may be accessed as a hex or base64 encoded
         #  string.  (It is also possible to access directly in byte array form via
         #  the "Signature" property.)
-        hex_sig = base64.b64encode(self.dsa.getEncodedSignature("hex").encode(encoding='UTF-8', errors='strict'))
+        hex_sig = base64.b64encode(self.dsa.getEncodedSignature("hex").encode('utf-8'))
 
         # print("Signature:")
         # print(hex_sig)
